@@ -6,11 +6,18 @@ from rclpy.node   import Node
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist
 from flocking_pkg.flocking import *
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy
 
 class FlockingNode(Node):
     def __init__(self,name):
         super().__init__(name)
         # Subscriptions to odometry topics 
+
+        qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
         
         self.sub0 = self.create_subscription(Odometry, "/robot_0/odom", self.robot_0_sub, 10)
         self.sub1 = self.create_subscription(Odometry, "/robot_1/odom", self.robot_1_sub, 10)
@@ -18,7 +25,7 @@ class FlockingNode(Node):
         self.sub3 = self.create_subscription(Odometry, "/robot_3/odom", self.robot_3_sub, 10)
         self.sub4 = self.create_subscription(Odometry, "/robot_4/odom", self.robot_4_sub, 10)
         self.sub5 = self.create_subscription(Odometry, "/robot_5/odom", self.robot_5_sub, 10)
-        self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, 10)
+        self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
 
         # Publisher to publish messages
         self.pub0 = self.create_publisher(Twist, "/robot_0/cmd_vel", 10)
