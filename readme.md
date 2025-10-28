@@ -15,7 +15,7 @@
 - [x] Alignment
 - [x] Cohesion
 - [x] Seperation
-- [ ] Subscribe for the map
+- [x] Subscribe for the map
 - [ ] Obstacle Avoidance 
 - [ ] Navigation to Point 
 - [ ] Test in Map a 
