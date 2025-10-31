@@ -16,11 +16,15 @@
 - [x] Cohesion
 - [x] Seperation
 - [x] Subscribe for the map
-- [ ] Obstacle Avoidance 
-- [ ] Navigation to Point 
+- [x] Obstacle Avoidance 
+- [x] Navigation to Point 
+- [ ] fine tuning
 - [ ] Test in Map a 
 - [ ] Test in Map b 
 - [ ] Test in Map c
 - [ ] Test in Map d
 
+## Updates
+- Changed `flocking_node.py` to read the number of the robot from yml and simplified the subs and pubs
+- Added the navigation to waypoints in `flocking.py`
 
