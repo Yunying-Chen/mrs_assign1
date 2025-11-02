@@ -7,12 +7,16 @@ from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist
 from flocking_pkg.flocking import *
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy
-
+from ament_index_python.packages import get_package_share_directory
+import yaml
+import os
 class FlockingNode(Node):
     def __init__(self,name):
         super().__init__(name)
         # Subscriptions to odometry topics 
-
+        config_path = '/root/ros2_ws/src/flocking_pkg/flocking_pkg/params.yaml' 
+        with open(config_path, 'r') as f:
+            self.params = yaml.safe_load(f)
         qos = QoSProfile(
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
@@ -23,15 +27,17 @@ class FlockingNode(Node):
         self.num_of_robots = self.get_parameter('num_of_robots').get_parameter_value().integer_value
         self.get_logger().info(f'Starting flocking with {self.num_of_robots} robots')
 
-        self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
 
         self.subs = {}
         self.pubs = {}
-
-        self.boids_dict = {}
-        self.timer = self.create_timer(0.5, self.flocking_callback)
-        self.waypoints = [(4,4),(-2,2)]
         self.flocking = None
+        self.boids_dict = {}
+        # self.waypoints = [(-4,2),(4,4),(-4,-4),(4,-2)]
+        self.waypoints = self.params["waypoints"]
+        self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
+
+        
+        self.timer = self.create_timer(0.5, self.flocking_callback)
         self.robots_setup()
         
 
@@ -40,6 +46,7 @@ class FlockingNode(Node):
             return
         updated_boids = self.flocking.update_boids(dt=0.5)
         for boid_id, boid in updated_boids.items():
+            # self.get_logger().info(f'Boid {boid_id} velocity: {boid.velocity}')
             cmd_msg = Twist()
             cmd_msg.linear.x = boid.velocity[0]
             cmd_msg.linear.y = boid.velocity[1]
@@ -47,7 +54,7 @@ class FlockingNode(Node):
 
 
     def map_sub(self, map_data):
-        print(f'Received map data')
+        self.get_logger().info(f'Received map data')
         resolution = map_data.info.resolution
         width = map_data.info.width
         height = map_data.info.height
@@ -56,9 +63,10 @@ class FlockingNode(Node):
         resolution = resolution
         map_array = np.array(map_data.data).reshape(height, width)
         if self.flocking is None:
-            self.flocking = Flocking(self.boids_dict, map_array=map_array,resolution=resolution, origin=origin)
-            self.flocking.set_leader(0)
-            self.flocking.set_waypoints(self.waypoints)
+            self.flocking = Flocking(self.boids_dict,params=self.params, map_array=map_array,resolution=resolution, origin=origin)
+            # self.flocking.set_leader(0)
+            if len(self.waypoints) >0:
+                self.flocking.set_waypoints(self.waypoints)
 
     def robots_setup(self):
         for sub in self.subs.values():

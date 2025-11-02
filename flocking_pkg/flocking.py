@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from scipy.spatial import cKDTree
+from scipy.ndimage import convolve
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
@@ -21,24 +22,25 @@ class Boid:
 
 # empty map weights: weights=[0.4,0.3,0.3,0.4]
 class Flocking:
-    def __init__(self,boids,neighbor_distance=4,neighbor_fov=6.28, weights=[0.4, 0.3, 0.3, 0.4], \
+    def __init__(self,boids,params, \
                  world_size=10,map_array=None, resolution=1.0, origin=np.zeros(2), clearance=0.1):
         # boids info
         self.boids = boids
         self.num_boids = len(boids.keys())
-        self.neighbor_distance =neighbor_distance
-        self.neighbor_fov=neighbor_fov
-        self.max_acc= 2.0
-        self.max_vel= 0.3
-        self.leader_id = 0 
+        self.neighbor_distance =params["neighbor_distance"]
+        self.neighbor_fov=params["neighbor_fov"]
+        self.max_acc= params["max_acc"]
+        self.max_vel= params["max_vel"]
+        self.leader_id = params["leader_id"]
         
         # weights for different force
-        self.weights=weights
-        self.seperationWeight=weights[0] 
-        self.alignmentWeight=weights[1]
-        self.cohesionWeight=weights[2]
-        self.obstacleAvoidanceWeight=weights[3]
-        self.goalWeight=0.0
+        self.params = params
+        self.seperationWeight=params["seperationWeight"]
+        self.alignmentWeight=params["alignmentWeight"]
+        self.cohesionWeight=params["cohesionWeight"]
+        self.obstacleAvoidanceWeight=params["obstacleAvoidanceWeight"]
+        self.goalWeight=params["goalWeight"]
+        self.leaderWeight=0.0
 
         # map
         self.world_size=10
@@ -54,14 +56,13 @@ class Flocking:
         
     def set_leader(self, leader_id, leaderWeight=0.8):
         self.leader_id = leader_id
-        self.leaderWeight = leaderWeight
+        self.leaderWeight = self.params["leaderWeight"]
 
     def set_waypoints(self, waypoints, goal_slowdown_radius=2.0, goal_stop_radius=0.5, goalWeight=1.0):
         self.waypoints = [np.array(p, dtype=float) for p in waypoints]
         self.goal_slowdown_radius = goal_slowdown_radius
         self.goal_stop_radius = goal_stop_radius
         self.goalWeight = goalWeight
-        self.goal = waypoints[-1] 
         self.reached_goal = False
 
     def compute_neighbor_boids(self, current_boid_id):
@@ -102,7 +103,7 @@ class Flocking:
             direction = (neighbor.position[0] - boid.position[0], neighbor.position[1] - boid.position[1])
             distance = np.linalg.norm(direction)
             if 0 < distance < self.neighbor_distance:
-                sep_vec += direction / distance
+                sep_vec += direction / (distance **2)
         norm = np.linalg.norm(sep_vec)
         # normalize seperation to unit vector
         return -sep_vec / norm if norm > 0 else np.zeros(2)
@@ -144,7 +145,7 @@ class Flocking:
                                                  grid_y * self.resolution + self.origin[1] + self.resolution / 2])
                         direction = boid.position - obstacle_pos
                         distance = np.linalg.norm(direction)
-                        if distance < self.neighbor_distance and distance > 0:
+                        if distance < search_radius and distance > 0:
                             force = 1.0 / (distance ** 2)
                             avoidance_vec += direction * force
         norm_total = np.linalg.norm(avoidance_vec)
@@ -231,8 +232,50 @@ class Flocking:
 
         return -steer_to / steer_dist
 
+    def compute_obstacle_repulsion(self, boid, d_th=1.0):#, k=1.0):
+        avoidance_vec = np.zeros(2)
+        # boid coords
+        boid_grid_x = int((boid.position[0] - self.origin[0]) / self.resolution)
+        boid_grid_y = int((boid.position[1] - self.origin[1]) / self.resolution)
+        search_window = int((self.neighbor_distance / self.resolution)/2) # half of search window
+        # window search - detect border of obstacles
+        min_x = max(0, boid_grid_x - search_window)
+        max_x = min(self.map_array.shape[1],  boid_grid_x + search_window)
+        min_y = max(0, boid_grid_y - search_window)
+        max_y = min(self.map_array.shape[0], boid_grid_y + search_window)
+
+        boid_scope = self.map_array[min_y:max_y, min_x:max_x]
+        if boid_scope.size == 0: 
+            print('No scope',boid_scope)
+            return []
+
+        obstacles_mask = boid_scope >= 80
+        kernel = np.array([[1,1,1],
+                            [1,0,1],
+                            [1,1,1]])
+        neighbors_count = convolve(obstacles_mask.astype(int), kernel, mode='constant', cval=0)
+        borders_mask = obstacles_mask & (neighbors_count < 8) # occupied and at least 1 free neighbor cell
+        # plt.imshow(borders_mask, cmap='grey')
+        # plt.show()
+
+        borders_idxs = np.argwhere(borders_mask)
+        # to coordinates in real world (centered)
+        for x_idx, y_idx in borders_idxs:
+            x = self.origin[0] + (min_x + x_idx + 0.5)*self.resolution
+            y = self.origin[1] + (min_y + y_idx + 0.5)*self.resolution
+            obstacle_pos = np.array([x,y])
+            direction = boid.position - obstacle_pos    # vector [2x1]
+            distance = np.linalg.norm(direction)
+            if distance <= d_th:
+                # repulsion = k * ((1/distance)-(1/d_th))* (1/distance**2)
+                repulsion = 1 - (distance/d_th)
+                F = repulsion * (direction/distance)
+                avoidance_vec += F
+        norm = np.linalg.norm(avoidance_vec)
+        return avoidance_vec / norm if norm > 0 else np.zeros(2)    # unit vector
+
     def navigate_to_waypoints(self, boid):
-        if len(self.waypoints) == 0 or self.reached_goal:
+        if self.waypoints is None or len(self.waypoints) == 0 or self.reached_goal:
             return np.zeros(2)
 
         current_goal = self.waypoints[0]
@@ -255,6 +298,8 @@ class Flocking:
         return attraction
 
     def compute_leader_attraction(self, boid):
+        if self.leader_id is None:
+            return np.zeros(2)
         if boid.id == self.leader_id:
             return np.zeros(2)  
         leader_boid = self.boids.get(self.leader_id)
@@ -275,51 +320,55 @@ class Flocking:
         return acc + add
 
     def update_boids(self,dt):
-
+        
         for i,boid in enumerate(self.boids.values()):
 
             ## using weighted sum of forces
-            # neighbors = self.compute_neighbor_boids(boid.id)
-            # alignment = self.compute_alignment(boid,neighbors) * self.alignmentWeight
-            # cohesion = self.compute_cohesion(boid,neighbors) * self.cohesionWeight
-            # seperation = self.compute_seperation(boid,neighbors) * self.seperationWeight
-            # obstacle_avoidance = self.compute_obstacle_avoidance(boid) * self.obstacleAvoidanceWeight
+            neighbors = self.compute_neighbor_boids(boid.id)
+   
+            alignment = self.compute_alignment(boid,neighbors) * self.alignmentWeight
+            cohesion = self.compute_cohesion(boid,neighbors) * self.cohesionWeight
+            seperation = self.compute_seperation(boid,neighbors) * self.seperationWeight
+            obstacle_avoidance = self.compute_obstacle_avoidance(boid) * self.obstacleAvoidanceWeight
             # leader_attraction = self.compute_leader_attraction(boid) * self.leaderWeight
             # goal_attraction=np.zeros(2)
             # if boid.id == self.leader_id:
-            #     goal_attraction = self.navigate_to_waypoints(boid) * self.goalWeight
-            # new_acc = alignment + cohesion + seperation + obstacle_avoidance + goal_attraction + leader_attraction
-
-            ## using prioritized forces
-            new_acc = np.zeros(2)
-            neighbors = self.compute_neighbor_boids(boid.id)
-            # obstacle_avoidance = self.compute_obstacle_avoidance(boid) 
-            obstacle_avoidance = self.compute_steer_to_avoid(boid)
-            seperation = self.compute_seperation(boid,neighbors)
-            goal_attraction = np.zeros(2)
-            leader_attraction = np.zeros(2)
-            if boid.id == self.leader_id:
-                goal_attraction = self.navigate_to_waypoints(boid)               
-            else:
-                leader_attraction = self.compute_leader_attraction(boid)   
-            alignment = self.compute_alignment(boid,neighbors)
-            cohesion = self.compute_cohesion(boid,neighbors)
-
-            new_acc = self._add_prior_force(new_acc, goal_attraction, self.max_acc)
-            remaining = self.max_acc - np.linalg.norm(new_acc)
-            new_acc = self._add_prior_force(new_acc, leader_attraction, remaining)
-            remaining = self.max_acc - np.linalg.norm(new_acc)  
-            new_acc = self._add_prior_force(new_acc, seperation, remaining)
-            remaining = self.max_acc - np.linalg.norm(new_acc)
-            new_acc = self._add_prior_force(new_acc, obstacle_avoidance, remaining)
-            remaining = self.max_acc - np.linalg.norm(new_acc)
-            new_acc = self._add_prior_force(new_acc, cohesion, remaining)
-            remaining = self.max_acc - np.linalg.norm(new_acc)
-            new_acc = self._add_prior_force(new_acc, alignment, remaining)
-            remaining = self.max_acc - np.linalg.norm(new_acc)
-
-
+            goal_attraction = self.navigate_to_waypoints(boid) * self.goalWeight
+            force = alignment + cohesion  + seperation  + goal_attraction  + obstacle_avoidance  #+ leader_attraction
+            mass = 1.0
+            new_acc = force/mass
             
+            ## using prioritized forces
+            # new_acc = np.zeros(2)
+            # neighbors = self.compute_neighbor_boids(boid.id)
+            # # obstacle_avoidance = self.compute_obstacle_avoidance(boid) 
+            # # obstacle_avoidance = self.compute_steer_to_avoid(boid)
+            # obstacle_avoidance = self.compute_obstacle_repulsion(boid)
+            # seperation = self.compute_seperation(boid,neighbors)
+            # goal_attraction = np.zeros(2)
+            # leader_attraction = np.zeros(2)
+            # if boid.id == self.leader_id:
+            #     goal_attraction = self.navigate_to_waypoints(boid)
+            # else:
+            #     leader_attraction = self.compute_leader_attraction(boid)   
+            # alignment = self.compute_alignment(boid,neighbors)
+            # cohesion = self.compute_cohesion(boid,neighbors)
+
+            # # Processing
+            # new_acc = self._add_prior_force(new_acc, goal_attraction, self.max_acc)
+            # remaining = self.max_acc - np.linalg.norm(new_acc)
+            # new_acc = self._add_prior_force(new_acc, leader_attraction, remaining)
+            # remaining = self.max_acc - np.linalg.norm(new_acc)  
+            # new_acc = self._add_prior_force(new_acc, seperation, remaining)
+            # remaining = self.max_acc - np.linalg.norm(new_acc)
+            # new_acc = self._add_prior_force(new_acc, obstacle_avoidance, remaining)
+            # remaining = self.max_acc - np.linalg.norm(new_acc)
+            # new_acc = self._add_prior_force(new_acc, cohesion, remaining)
+            # remaining = self.max_acc - np.linalg.norm(new_acc)
+            # new_acc = self._add_prior_force(new_acc, alignment, remaining)
+            # remaining = self.max_acc - np.linalg.norm(new_acc)
+
+
             norm_acc = np.linalg.norm(new_acc)
             if norm_acc > self.max_acc:
                 new_acc = new_acc / norm_acc * self.max_acc
@@ -333,8 +382,8 @@ class Flocking:
                     new_vel = np.zeros(2)
             new_position = boid.position + new_vel * dt
             
-            self.boids[i].set_velocity(new_vel)
-            self.boids[i].set_position(new_position)
-           
+            self.boids.get(boid.id).set_velocity(new_vel)
+            self.boids.get(boid.id).set_position(new_position)
+
         return self.boids
 
