@@ -317,15 +317,22 @@ class Flocking:
             return (direction / norm * force) if norm > 0 else np.zeros(2)
         
 
-    @staticmethod
-    def _add_prior_force(acc, desired, max_rem):
-        if np.linalg.norm(desired) < 1e-9: return acc
-        proj = np.dot(desired, acc)
-        orth = desired - proj * acc / (np.linalg.norm(acc)**2 + 1e-12)
-        room = max_rem - np.linalg.norm(acc)
-        if room <= 0: return acc
-        add = orth / np.linalg.norm(orth) * min(np.linalg.norm(orth), room)
-        return acc + add
+    def prioritized_acc_allocation(self, force_list, max_acc):
+        acc = np.zeros(2)
+        for force in force_list:
+            if np.linalg.norm(force) < 1e-9:
+                continue  
+            remaining = max_acc - np.linalg.norm(acc)
+            if remaining <= 0:
+                break           
+            force_norm = np.linalg.norm(force)
+
+            if force_norm <= remaining:
+                acc += force
+            else:
+                acc += force / force_norm * remaining
+                break  
+        return acc
 
     def update_boids(self,dt):
         
@@ -347,9 +354,9 @@ class Flocking:
             ## using prioritized forces
             # new_acc = np.zeros(2)
             # neighbors = self.compute_neighbor_boids(boid.id)
-            # # obstacle_avoidance = self.compute_obstacle_avoidance(boid) 
+            # obstacle_avoidance = self.compute_obstacle_avoidance(boid) 
             # # obstacle_avoidance = self.compute_steer_to_avoid(boid)
-            # obstacle_avoidance = self.compute_obstacle_repulsion(boid)
+            # # obstacle_avoidance = self.compute_obstacle_repulsion(boid)
             # seperation = self.compute_seperation(boid,neighbors)
             # goal_attraction = np.zeros(2)
             # leader_attraction = np.zeros(2)
@@ -359,20 +366,18 @@ class Flocking:
             #     leader_attraction = self.compute_leader_attraction(boid)   
             # alignment = self.compute_alignment(boid,neighbors)
             # cohesion = self.compute_cohesion(boid,neighbors)
+            # force_list = []
+            #  ##top 1
+            # force_list.append(obstacle_avoidance)
+            # # top 2
+            # force_list.append(cohesion*0.3)
+            # force_list.append(seperation*0.5) 
+            
+            # force_list.append(alignment)
+            # force_list.append(goal_attraction)
+            # force_list.append(leader_attraction)
+            # new_acc = self.prioritized_acc_allocation(force_list, self.max_acc)
 
-            # # Processing
-            # new_acc = self._add_prior_force(new_acc, goal_attraction, self.max_acc)
-            # remaining = self.max_acc - np.linalg.norm(new_acc)
-            # new_acc = self._add_prior_force(new_acc, leader_attraction, remaining)
-            # remaining = self.max_acc - np.linalg.norm(new_acc)  
-            # new_acc = self._add_prior_force(new_acc, seperation, remaining)
-            # remaining = self.max_acc - np.linalg.norm(new_acc)
-            # new_acc = self._add_prior_force(new_acc, obstacle_avoidance, remaining)
-            # remaining = self.max_acc - np.linalg.norm(new_acc)
-            # new_acc = self._add_prior_force(new_acc, cohesion, remaining)
-            # remaining = self.max_acc - np.linalg.norm(new_acc)
-            # new_acc = self._add_prior_force(new_acc, alignment, remaining)
-            # remaining = self.max_acc - np.linalg.norm(new_acc)
 
 
             norm_acc = np.linalg.norm(new_acc)
