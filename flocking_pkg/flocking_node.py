@@ -35,6 +35,7 @@ class FlockingNode(Node):
         # self.waypoints = [(-4,2),(4,4),(-4,-4),(4,-2)]
         self.waypoints = self.params["waypoints"]
         self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
+        self.leader_id = self.params["leader_id"]
 
         
         self.timer = self.create_timer(0.5, self.flocking_callback)
@@ -64,7 +65,8 @@ class FlockingNode(Node):
         map_array = np.array(map_data.data).reshape(height, width)
         if self.flocking is None:
             self.flocking = Flocking(self.boids_dict,params=self.params, map_array=map_array,resolution=resolution, origin=origin)
-            # self.flocking.set_leader(0)
+            if self.leader_id is not None:
+                self.flocking.set_leader(self.leader_id)
             if len(self.waypoints) >0:
                 self.flocking.set_waypoints(self.waypoints)
 

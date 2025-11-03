@@ -115,8 +115,12 @@ class Flocking:
         center = np.mean([n.position for n in neighbors], axis=0)
         direction = center - boid.position
         norm = np.linalg.norm(direction)
+        if norm == 0:
+            return np.zeros(2)
+        strength = norm
         # normalize cohesion to unit vector
-        return direction / norm if norm > 0 else np.zeros(2) 
+        force = (direction / norm) * strength
+        return force
 
 
     def compute_alignment(self,boid,neighbors):
@@ -298,15 +302,19 @@ class Flocking:
         return attraction
 
     def compute_leader_attraction(self, boid):
+        
         if self.leader_id is None:
             return np.zeros(2)
         if boid.id == self.leader_id:
             return np.zeros(2)  
-        leader_boid = self.boids.get(self.leader_id)
-        direction = (leader_boid.position[0] - boid.position[0], leader_boid.position[1] - boid.position[1])
-        norm = np.linalg.norm(direction)
-        force = min(norm/1.5, 1.0) 
-        return (direction / norm * force) if norm > 0 else np.zeros(2)
+        if self.leader_id is not None:
+            leader_boid = self.boids.get(self.leader_id,None)
+            if leader_boid is None:
+                return np.zeros(2)
+            direction = (leader_boid.position[0] - boid.position[0], leader_boid.position[1] - boid.position[1])
+            norm = np.linalg.norm(direction)
+            force = min(norm/1.5, 1.0) 
+            return (direction / norm * force) if norm > 0 else np.zeros(2)
         
 
     @staticmethod
@@ -330,11 +338,9 @@ class Flocking:
             cohesion = self.compute_cohesion(boid,neighbors) * self.cohesionWeight
             seperation = self.compute_seperation(boid,neighbors) * self.seperationWeight
             obstacle_avoidance = self.compute_obstacle_avoidance(boid) * self.obstacleAvoidanceWeight
-            # leader_attraction = self.compute_leader_attraction(boid) * self.leaderWeight
-            # goal_attraction=np.zeros(2)
-            # if boid.id == self.leader_id:
+            leader_attraction = self.compute_leader_attraction(boid) * self.leaderWeight           
             goal_attraction = self.navigate_to_waypoints(boid) * self.goalWeight
-            force = alignment + cohesion  + seperation  + goal_attraction  + obstacle_avoidance  #+ leader_attraction
+            force = alignment + cohesion  + seperation  + goal_attraction  + obstacle_avoidance  + leader_attraction
             mass = 1.0
             new_acc = force/mass
             
