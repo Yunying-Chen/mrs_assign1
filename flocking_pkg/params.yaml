@@ -1,13 +1,15 @@
 neighbor_distance: 2
-neighbor_fov: 7
-seperationWeight: 0.4
-alignmentWeight: 0.3
-cohesionWeight: 0.4
-obstacleAvoidanceWeight: 0.3
+neighbor_fov: 6.284
+seperationWeight: 0.6
+alignmentWeight: 0.5
+cohesionWeight: 0.6
+obstacleAvoidanceWeight: 0.5
 
-waypoints: []
+# waypoints: [[1,-4],[2,-1.5],[-2,-1.5],[-2, 1.0],[2,1.5],[2,3],[-3,3]]
+waypoints: [[3,-4.0],[3,-1.0],[-3,-1.0],[-3,1.5],[3,1.5],[3,3],[-3,4]]
 goalWeight: 1.0
 
+followLeader: False
 leader_id: None
 leaderWeight: 0.0
 

@@ -31,7 +31,7 @@ class Flocking:
         self.neighbor_fov=params["neighbor_fov"]
         self.max_acc= params["max_acc"]
         self.max_vel= params["max_vel"]
-        self.leader_id = params["leader_id"]
+        self.leader_id = None
         
         # weights for different force
         self.params = params
@@ -40,7 +40,9 @@ class Flocking:
         self.cohesionWeight=params["cohesionWeight"]
         self.obstacleAvoidanceWeight=params["obstacleAvoidanceWeight"]
         self.goalWeight=params["goalWeight"]
+        self.goal= None
         self.leaderWeight=0.0
+        self.FollowLeader = False
 
         # map
         self.world_size=10
@@ -57,6 +59,7 @@ class Flocking:
     def set_leader(self, leader_id, leaderWeight=0.8):
         self.leader_id = leader_id
         self.leaderWeight = self.params["leaderWeight"]
+        self.FollowLeader=True
 
     def set_waypoints(self, waypoints, goal_slowdown_radius=2.0, goal_stop_radius=0.5, goalWeight=1.0):
         self.waypoints = [np.array(p, dtype=float) for p in waypoints]
@@ -64,6 +67,7 @@ class Flocking:
         self.goal_stop_radius = goal_stop_radius
         self.goalWeight = goalWeight
         self.reached_goal = False
+        self.goal = waypoints[-1]
 
     def compute_neighbor_boids(self, current_boid_id):
         positions = np.array([boid.position for boid in self.boids.values()])
@@ -192,6 +196,8 @@ class Flocking:
                         enlarged_radius = self.resolution / 2 + self.clearance
 
                         obs_angle = np.arctan2(obs_vec[1], obs_vec[0])
+                        if obs_dist <= enlarged_radius:
+                            continue
                         tangent_angle = np.arcsin(enlarged_radius / obs_dist)
 
                         left_tangent_angle = obs_angle - tangent_angle
@@ -234,7 +240,7 @@ class Flocking:
         if steer_dist < 1e-6:
             return np.zeros(2)
 
-        return -steer_to / steer_dist
+        return steer_to / steer_dist
 
     def compute_obstacle_repulsion(self, boid, d_th=1.0):#, k=1.0):
         avoidance_vec = np.zeros(2)
@@ -296,8 +302,8 @@ class Flocking:
         unit = direction / dist if dist > 0 else np.zeros(2)
         slowdown_factor = np.clip(dist / self.goal_slowdown_radius, 0.0, 1.0) 
         attraction = unit * slowdown_factor
-        if dist < self.goal_slowdown_radius:
-            drag = -np.array(boid.velocity) * slowdown_factor * 3.0
+        if dist < self.goal_slowdown_radius and set(self.goal)== set(current_goal):
+            drag = -np.array(boid.velocity) * slowdown_factor * 4
             attraction += drag
         return attraction
 
@@ -347,7 +353,15 @@ class Flocking:
             obstacle_avoidance = self.compute_obstacle_avoidance(boid) * self.obstacleAvoidanceWeight
             leader_attraction = self.compute_leader_attraction(boid) * self.leaderWeight           
             goal_attraction = self.navigate_to_waypoints(boid) * self.goalWeight
-            force = alignment + cohesion  + seperation  + goal_attraction  + obstacle_avoidance  + leader_attraction
+            if self.FollowLeader is False:
+                force = alignment + cohesion  + seperation  + goal_attraction  + leader_attraction + obstacle_avoidance
+            else:
+                if self.leader_id is not None and self.leader_id !=boid.id:
+                    force = alignment + cohesion  + seperation  + leader_attraction + obstacle_avoidance 
+                else:
+                    force = alignment + cohesion  + seperation  + goal_attraction  + leader_attraction + obstacle_avoidance
+                
+                
             mass = 1.0
             new_acc = force/mass
             
@@ -389,7 +403,8 @@ class Flocking:
                 new_vel = new_vel / norm_vel * self.max_vel
 
             if self.reached_goal:
-                if np.linalg.norm(np.array(boid.position) - np.array(self.boids[self.leader_id].position)) < self.goal_stop_radius:
+                # if np.linalg.norm(np.array(boid.position) - np.array(self.goal)) < self.goal_stop_radius:
+                    # print(f'boid:{boid.id} reached goal')
                     new_vel = np.zeros(2)
             new_position = boid.position + new_vel * dt
             

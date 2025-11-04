@@ -36,6 +36,8 @@ class FlockingNode(Node):
         self.waypoints = self.params["waypoints"]
         self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
         self.leader_id = self.params["leader_id"]
+        self.leaderWeight = self.params["leaderWeight"]
+        self.followLeader = self.params["followLeader"]
 
         
         self.timer = self.create_timer(0.5, self.flocking_callback)
@@ -46,6 +48,7 @@ class FlockingNode(Node):
         if self.flocking is None or len(self.boids_dict) < 2:
             return
         updated_boids = self.flocking.update_boids(dt=0.5)
+        # 
         for boid_id, boid in updated_boids.items():
             # self.get_logger().info(f'Boid {boid_id} velocity: {boid.velocity}')
             cmd_msg = Twist()
@@ -65,10 +68,11 @@ class FlockingNode(Node):
         map_array = np.array(map_data.data).reshape(height, width)
         if self.flocking is None:
             self.flocking = Flocking(self.boids_dict,params=self.params, map_array=map_array,resolution=resolution, origin=origin)
-            if self.leader_id is not None:
-                self.flocking.set_leader(self.leader_id)
+            if self.followLeader:
+                self.flocking.set_leader(self.leader_id,self.leaderWeight)
             if len(self.waypoints) >0:
-                self.flocking.set_waypoints(self.waypoints)
+                goalWeight = self.params["goalWeight"]
+                self.flocking.set_waypoints(self.waypoints,goalWeight=goalWeight)
 
     def robots_setup(self):
         for sub in self.subs.values():
