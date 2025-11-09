@@ -7,40 +7,50 @@ from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist
 from flocking_pkg.flocking import *
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy
-
+from ament_index_python.packages import get_package_share_directory
+import yaml
+import os
 class FlockingNode(Node):
     def __init__(self,name):
         super().__init__(name)
-        # Subscriptions to odometry topics 
-
+        config_path = '/root/ros2_ws/src/flocking_pkg/flocking_pkg/params.yaml' 
+        with open(config_path, 'r') as f:
+            self.params = yaml.safe_load(f)
+        sim_params_path = '/root/ros2_ws/src/sphero_simulation/sphero_stage/launch/launch_params.yaml' 
+        with open(sim_params_path, 'r') as f:
+            self.sim_params = yaml.safe_load(f)
+        # Subscriptions
         qos = QoSProfile(
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
         )
 
-        self.declare_parameter('num_of_robots', 6)               
-        self.num_of_robots = self.get_parameter('num_of_robots').get_parameter_value().integer_value
+        # self.declare_parameter('num_of_robots', 6)               
+        # self.num_of_robots = self.get_parameter('num_of_robots').get_parameter_value().integer_value
+        self.num_of_robots = self.sim_params["num_of_robots"]
         self.get_logger().info(f'Starting flocking with {self.num_of_robots} robots')
-
-        self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
 
         self.subs = {}
         self.pubs = {}
-
-        self.boids_dict = {}
-        self.timer = self.create_timer(0.5, self.flocking_callback)
-        self.waypoints = [(-4,0),(-2,0),(2,2)]
         self.flocking = None
+        self.boids_dict = {}
+        # self.waypoints = [(-4,0),(-2,0),(2,2)]
+        self.waypoints = self.params["waypoints"]
+        self.sub_map = self.create_subscription(OccupancyGrid, "/map", self.map_sub, qos)
+        self.leader_id = self.params["leader_id"]
+        self.followLeader = True if self.leader_id is not None else False
+
+        self.timer = self.create_timer(0.5, self.flocking_callback)
         self.robots_setup()
         
 
     def flocking_callback(self):
-        self.flocking.compute_obstacle_repulsion(self.boids_dict[1])
         if self.flocking is None or len(self.boids_dict) < 2:
             return
         updated_boids = self.flocking.update_boids(dt=0.5)
         for boid_id, boid in updated_boids.items():
+            # self.get_logger().info(f'Boid {boid_id} velocity: {boid.velocity}')
             cmd_msg = Twist()
             cmd_msg.linear.x = boid.velocity[0]
             cmd_msg.linear.y = boid.velocity[1]
@@ -55,17 +65,25 @@ class FlockingNode(Node):
         origin = map_data.info.origin.position
         origin = (origin.x, origin.y)
         resolution = resolution
-        map_array = np.array(map_data.data).reshape(height, width)
+        map_array = np.array(map_data.data).reshape((height, width))
         if self.flocking is None:
-            self.flocking = Flocking(self.boids_dict, map_array=map_array,resolution=resolution, origin=origin)
-            # closest boid to first waypoint
-            closest_boid_id = min(
-                self.boids_dict,
-                key=lambda bid: (self.boids_dict[bid].position[0] - self.waypoints[0][0])**2 +
-                                (self.boids_dict[bid].position[1] - self.waypoints[0][1])**2
-            )
-            self.flocking.set_leader(closest_boid_id)
-            self.flocking.set_waypoints(self.waypoints)
+            self.flocking = Flocking(self.boids_dict,params=self.params, map_array=map_array,resolution=resolution, origin=origin)
+            if self.leader_id == -1:
+                # closest boid to first waypoint
+                if len(self.waypoints) > 0:
+                    leader_boid_id = min(
+                        self.boids_dict,
+                        key=lambda bid: (self.boids_dict[bid].position[0] - self.waypoints[0][0])**2 +
+                                        (self.boids_dict[bid].position[1] - self.waypoints[0][1])**2
+                    )
+                else:
+                    leader_boid_id = None
+            else:   # None or any other number (int)
+                leader_boid_id = self.leader_id
+            self.flocking.set_leader(leader_boid_id)
+            if len(self.waypoints) > 0:
+                self.flocking.set_waypoints(self.waypoints, goal_stop_radius=self.params['goal_stop_radius'], goalWeight = self.params['goalWeight'])
+
 
     def robots_setup(self):
         for sub in self.subs.values():
@@ -88,6 +106,7 @@ class FlockingNode(Node):
             boid = Boid(robot_id, (linear_vel.x, linear_vel.y), (pose.x, pose.y))
             self.boids_dict[robot_id] = boid
         return callback
+
 
 def main(args=None):
     rclpy.init(args=args)

@@ -1,0 +1,18 @@
+neighbor_distance: 2
+neighbor_fov: 7
+seperationWeight: 0.7
+alignmentWeight: 0.5
+cohesionWeight: 0.7
+obstacleAvoidanceWeight: 0.2
+
+waypoints: [[-4,-4],[-4,-2],[-2,-2],[-2,-1],[-2,0],[0,0],[4.2,0],[4,2],[3,2],[0,2],[0,4.2],[-4,4]]
+# waypoints: [[0,-2],[3,-2],[-2,1]]
+goalWeight: 1.0
+
+goal_stop_radius: 0.3
+leader_id: -1
+leaderWeight: 0.1
+
+max_vel: 0.3
+max_acc: 0.5
+

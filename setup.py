@@ -1,3 +1,5 @@
+# import os
+# import glob
 from setuptools import find_packages, setup
 
 package_name = 'flocking_pkg'
@@ -10,6 +12,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        # (os.path.join('share', 'flocking_pkg', 'launch'), glob('launch/*.launch.py')),
+        ('share/'+package_name+'/'+package_name+'/launch', [package_name+'/launch/start.launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
